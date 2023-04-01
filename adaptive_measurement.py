@@ -1,4 +1,4 @@
-from qiskit import QuantumCircuit, QuantumRegister, transpile
+from qiskit import QuantumCircuit, QuantumRegister, transpile, BasicAer, Aer
 from qiskit.quantum_info import Operator
 from qiskit.circuit.quantumregister import AncillaRegister
 from qiskit.quantum_info import PauliList
@@ -12,7 +12,7 @@ from qiskit.visualization import *
 
 h = 10 ** -3
 delta = 0.05
-S = 100
+S = 1000
 
 """
 notations:
@@ -25,8 +25,8 @@ notations:
 
 class ParameterizedUnitary(object):
     def __init__(self, obj=None):
-        # self.parameters = [0.6] * 8  # all 8 parameters should be in (0,1)
-        self.parameters = list(np.random.rand(8))
+        self.parameters = [0.6] * 8  # all 8 parameters should be in (0,1)
+        # self.parameters = list(np.random.rand(8))
         # print(self.parameters)
         self.unitary = None
         if obj is not None:
@@ -42,13 +42,13 @@ class ParameterizedUnitary(object):
         :param b:
         :return:
         """
-        b = b.flatten()
+        b = b.flatten().reshape((1, 4))
         effects = self.get_effects()
         for i in range(len(effects)):
             effects[i] = effects[i].flatten()
         effects = np.asarray(effects)
         result = np.linalg.solve(effects.T, b.T)
-        return result.T
+        return result.flatten()
 
     def get_effects(self):
         """
@@ -61,7 +61,7 @@ class ParameterizedUnitary(object):
             eff = np.zeros([2, 2], dtype=complex)
             for i in range(2):
                 for j in range(2):
-                    eff[i][j] = u[i][k] * u[j][k].conjugate()
+                    eff[i][j] = u[k][i].conjugate() * u[k][j]
             effects.append(eff)
         # the effects should have sum one and independent
         # GramSchmidt([Matrix(x) for x in effects])  # assert effects is independent
@@ -119,8 +119,8 @@ class IcPOVM(object):
         meas = QuantumCircuit(2 * n, 2 * n)
         meas.measure(range(2 * n), range(2 * n))
         circ = circ.compose(meas, range(2 * n))
-        # circ.draw('mpl')
-        # plt.show()
+        circ.draw('mpl')
+        plt.show()
         return circ
 
     def update_parameters(self, paras):
@@ -137,7 +137,7 @@ class IcPOVM(object):
         ms = []
 
         # todo: simulate circuit and store results in ms
-        be = AerSimulator()
+        be = Aer.get_backend('qasm_simulator')
         compiled_circuit = transpile(self.construct_circuit(), be)
         job_sim = be.run(compiled_circuit, shots=s)
         counts = job_sim.result().get_counts()
@@ -147,7 +147,7 @@ class IcPOVM(object):
             m = []
             for i in range(self.bits):
                 m.append(int(x[i] + x[i + self.bits], 2))
-            ms.extend([m] * y)
+            ms.append((m, y))
 
         return ms
 
@@ -200,12 +200,12 @@ class AdaptiveMeasurement(object):
         :param ms:
         :return:
         """
-        s = len(ms)
+        s = sum([c for m, c in ms])
         gradient = []
         original = 0
-        for m in ms:
+        for m, c in ms:
             omega = self.omega(m)
-            original += omega * omega.conjugate()
+            original += c * omega * omega.conjugate()
         original /= s
         for i in range(self.N):
             current_gradient = []
@@ -215,7 +215,7 @@ class AdaptiveMeasurement(object):
                 tpu = pu
                 tpu.parameters[k] += h
                 tpu.get_unitary(update=True)
-                for m in ms:
+                for m, c in ms:
                     # print("new:", tpu.get_effects())
                     # print("old:", self.meas.pu[i].get_effects())
                     for rl in range(4):
@@ -230,7 +230,7 @@ class AdaptiveMeasurement(object):
                         omega = self.omega(m)
                         self.meas.pu[i] = t[0]
                         m[i] = t[1]
-                        sm += d * omega * omega.conjugate()
+                        sm += c * d * omega * omega.conjugate()
                         # print("d:", d)
                 sm /= s
                 # print("sm:", sm)
@@ -253,8 +253,11 @@ class AdaptiveMeasurement(object):
             print(f"{i + 1}th iteration started...")
             ms = self.meas.simulate_measure(s)
             # print('im here')
-            ot = sum([self.omega(m) for m in ms]) / s
-            vt = np.var([self.omega(m) for m in ms])
+            ot = sum([self.omega(m) * c /s for m, c in ms])
+            vt = 0
+            for m, c in ms:
+                vt += (self.omega(m) - ot) ** 2 * c
+            vt /= s
             if (o, v) == (None, None):
                 o, v = ot, vt
             else:

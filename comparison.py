@@ -1,8 +1,8 @@
-from qiskit import QuantumCircuit, BasicAer, transpile
+from qiskit import QuantumCircuit, BasicAer, transpile, Aer
 import matplotlib.pyplot as plt
 import numpy as np
 
-from adaptive_measurement_for_test import observable_of_ising_model, AdaptiveMeasurement, Observable
+from adaptive_measurement import observable_of_ising_model, AdaptiveMeasurement, Observable
 
 
 class Preparation(QuantumCircuit):
@@ -10,8 +10,8 @@ class Preparation(QuantumCircuit):
         super().__init__(n)
         for i in range(n):
             self.cnot(i, (i + 1) % n)
-            # self.ry(i / n, i)
-            # self.rz(i / n / 2, (i + 1) % n)
+            self.ry(i / n, i)
+            self.rz(i / n / 2, (i + 1) % n)
             self.h(i)
         self.draw('mpl')
         plt.show()
@@ -28,6 +28,7 @@ def compare(u: QuantumCircuit, o: np.ndarray, shots):
     # two method result:
     # adaptive measure
     pstr = Observable(n, o).get_pauli_string_for_diagonal()
+    print(pstr)
     am = AdaptiveMeasurement(n, pstr, u)
     print(am.run(20))
 
@@ -39,19 +40,6 @@ if __name__ == '__main__':
     u = Preparation(n)
     o = observable_of_ising_model(n)
 
-    prep = QuantumCircuit(n)
-    # prep.cnot(0, 1)
-    # prep.rx(0.4, 1)
-    # prep.cnot(1, 2)
-    # prep.ry(0.3, 2)
-    # prep.cnot(2, 3)
-    # prep.rz(0.26, 3)
 
-    for i in range(n):
-        prep.h(i)
-    for i in range(n):
-        prep.cnot(i,(i+1)%n)
-    prep.draw('mpl')
-    plt.show()
-
-    compare(prep, o, 100)
+    print(Aer.backends())
+    compare(u, o, 100)
