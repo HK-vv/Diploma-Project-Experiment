@@ -2,7 +2,9 @@ from qiskit import QuantumCircuit, BasicAer, transpile, Aer
 import matplotlib.pyplot as plt
 import numpy as np
 
-from adaptive_measurement import observable_of_ising_model, AdaptiveMeasurement, Observable
+from adaptive_measurement import observable_of_ising_model, AdaptiveMeasurement, Observable, OriginalParameterization, \
+    CanonicalParameterization
+from qae import calc_by_qae
 
 
 class Preparation(QuantumCircuit):
@@ -26,20 +28,24 @@ def compare(u: QuantumCircuit, o: np.ndarray, shots):
     print(ideal_res)
 
     # two method result:
+
+    # QAE
+    ans = calc_by_qae(u, o, 2, 10000)
+    print("qae result:", ans)
+
     # adaptive measure
     pstr = Observable(n, o).get_pauli_string_for_diagonal()
     print(pstr)
-    am = AdaptiveMeasurement(n, pstr, u)
+    am = AdaptiveMeasurement(n, pstr, u, CanonicalParameterization)
     print(am.run(20))
 
     pass
 
 
 if __name__ == '__main__':
-    n = 4
+    n = 3
     u = Preparation(n)
-    o = observable_of_ising_model(n)
-
+    o = observable_of_ising_model(n) * 10
 
     print(Aer.backends())
     compare(u, o, 100)

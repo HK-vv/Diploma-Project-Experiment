@@ -1,18 +1,19 @@
+from decimal import Decimal
+
 from qiskit import QuantumCircuit, QuantumRegister, transpile, BasicAer, Aer
 from qiskit.quantum_info import Operator
 from qiskit.circuit.quantumregister import AncillaRegister
-from qiskit.quantum_info import PauliList
+from qiskit.quantum_info import PauliList, Operator
 import numpy as np
 import matplotlib.pyplot as plt
 import n_sphere
 from sympy.matrices import Matrix, GramSchmidt
 from qiskit.extensions import UnitaryGate
-from qiskit_aer import AerSimulator
 from qiskit.visualization import *
 
 h = 10 ** -3
 delta = 0.05
-S = 1000
+S = 1000000
 
 """
 notations:
@@ -24,13 +25,11 @@ notations:
 
 
 class ParameterizedUnitary(object):
-    def __init__(self, obj=None):
-        self.parameters = [0.6] * 8  # all 8 parameters should be in (0,1)
-        # self.parameters = list(np.random.rand(8))
-        # print(self.parameters)
+    num_parameter = 0
+
+    def __init__(self):
+        self.parameters = None
         self.unitary = None
-        if obj is not None:
-            self.parameters = obj.parameters
 
     def generate_gate(self):
         u = self.get_unitary()
@@ -68,10 +67,26 @@ class ParameterizedUnitary(object):
         return effects
 
     def get_unitary(self, update=False):
-        """
-        O(1)
-        :return:
-        """
+        raise Exception("abstract method should never be called")
+
+    def update_diff(self, diffs):
+        raise Exception("abstract method should never be called")
+
+
+class OriginalParameterization(ParameterizedUnitary):
+    num_parameter = 8
+
+    def __init__(self, obj=None):
+        super(OriginalParameterization, self).__init__()
+        self.parameters = [0.6] * type(self).num_parameter  # all parameters should be in (0,1)
+        # self.parameters = list(np.random.rand(type(self).num_parameter))
+        if obj is not None:
+            if isinstance(obj, type(self)):
+                self.parameters = obj.parameters
+            else:
+                raise Exception("Inconsistent type of parameterization!")
+
+    def get_unitary(self, update=False):
         if self.unitary is not None and update is False:
             return self.unitary
         x = self.parameters
@@ -98,13 +113,62 @@ class ParameterizedUnitary(object):
         for k in range(4):
             u[k] = (np.array(tu[k].T))
         self.unitary = u
-        return u
+        return self.unitary
+
+    def update_diff(self, diffs):
+        for i in range(type(self).num_parameter):
+            upd = self.parameters[i] + diffs[i].real
+            upd = min(upd, 1 - delta)
+            upd = max(upd, delta)
+            self.parameters[i] = upd
+
+
+class CanonicalParameterization(ParameterizedUnitary):
+    num_parameter = 15
+
+    def __init__(self, obj=None):
+        super(CanonicalParameterization, self).__init__()
+        # self.parameters = [0.6] * type(self).num_parameter  # all parameters should be in (0,1)
+        self.parameters = list(np.random.rand(type(self).num_parameter))
+        if obj is not None:
+            if isinstance(obj, type(self)):
+                self.parameters = obj.parameters
+            else:
+                raise Exception("Inconsistent type of parameterization!")
+
+    def get_unitary(self, update=False):
+        if self.unitary is not None and update is False:
+            return self.unitary
+        vcirc = QuantumCircuit(2)
+        c = 2 * np.pi
+        for i in range(2):
+            bias = 0
+            vcirc.rx(c * self.parameters[bias + i * 3 + 0], i)
+            vcirc.ry(c * self.parameters[bias + i * 3 + 1], i)
+            vcirc.rx(c * self.parameters[bias + i * 3 + 2], i)
+        vcirc.rxx(c * self.parameters[6], 0, 1)
+        vcirc.ryy(c * self.parameters[7], 0, 1)
+        vcirc.rzz(c * self.parameters[8], 0, 1)
+        for i in range(2):
+            bias = 9
+            vcirc.rx(c * self.parameters[bias + i * 3 + 0], i)
+            vcirc.ry(c * self.parameters[bias + i * 3 + 1], i)
+            vcirc.rx(c * self.parameters[bias + i * 3 + 2], i)
+        self.unitary = Operator(vcirc).data
+        return self.unitary
+
+    def update_diff(self, diffs):
+        for i in range(type(self).num_parameter):
+            upd = self.parameters[i] + diffs[i].real
+            upd = upd - np.floor(upd)
+            self.parameters[i] = upd
 
 
 class IcPOVM(object):
-    def __init__(self, n, init_circuit):
+    def __init__(self, n, init_circuit, parameterization):
         self.bits = n
-        self.pu = [ParameterizedUnitary() for _ in range(n)]
+        self.parameterization = parameterization
+        self.pu = [self.parameterization() for _ in range(n)]
         self.init = init_circuit
 
     def construct_circuit(self):
@@ -115,28 +179,23 @@ class IcPOVM(object):
         circ.add_register(input_state, ancilla_state)
         circ.compose(self.init, qubits=range(n), front=True, inplace=True)
         for i in range(n):
-            circ.append(self.pu[i].generate_gate(), [i, i + n])  # change to PU
+            circ.append(self.pu[i].generate_gate(), [i, i + n])  # apply PU
         meas = QuantumCircuit(2 * n, 2 * n)
         meas.measure(range(2 * n), range(2 * n))
         circ = circ.compose(meas, range(2 * n))
-        circ.draw('mpl')
-        plt.show()
+        # circ.draw('mpl')
+        # plt.show()
         return circ
 
-    def update_parameters(self, paras):
+    def update_parameters(self, diff):
         for i in range(self.bits):
-            for j in range(8):
-                # print(paras[i][j])
-                self.pu[i].parameters[j] += paras[i][j]
-                self.pu[i].parameters[j] = min(self.pu[i].parameters[j], 1 - delta)
-                self.pu[i].parameters[j] = max(self.pu[i].parameters[j], delta)
-                self.pu[i].parameters[j] = self.pu[i].parameters[j].real
+            self.pu[i].update_diff(diff[i])
             self.pu[i].get_unitary(update=True)
 
     def simulate_measure(self, s):
         ms = []
 
-        # todo: simulate circuit and store results in ms
+        # simulate circuit and store results in ms
         be = Aer.get_backend('qasm_simulator')
         compiled_circuit = transpile(self.construct_circuit(), be)
         job_sim = be.run(compiled_circuit, shots=s)
@@ -153,11 +212,11 @@ class IcPOVM(object):
 
 
 class AdaptiveMeasurement(object):
-    def __init__(self, n, observable: dict, init_circuit):
-        # assert len(observable[0][0]) == n
+    def __init__(self, n, observable: dict, init_circuit, parameterization):
         self.N = n
         self.observable = observable  # performed by the pauli string of observable
-        self.meas = IcPOVM(n, init_circuit)
+        self.parameterization = parameterization
+        self.meas = IcPOVM(n, init_circuit, self.parameterization)
 
     def omega(self, m: list):
         """
@@ -200,41 +259,65 @@ class AdaptiveMeasurement(object):
         :param ms:
         :return:
         """
-        s = sum([c for m, c in ms])
+        if self.parameterization == OriginalParameterization:
+            return self.gradient_original(ms)
+        elif self.parameterization == CanonicalParameterization:
+            return self.gradient_canonical(ms)
+        else:
+            raise Exception("wrong type of parameterization.")
+
+    def variance_of_biased_parameter(self, qubit, param, bias, ms):
+        sm = 0
+        tpu = self.parameterization(self.meas.pu[qubit])
+        tpu.parameters[param] += bias
+        tpu.get_unitary(update=True)
+        for m, c in ms:
+            for rl in range(4):
+                deco = self.meas.pu[qubit].coefficient_on_effects(tpu.get_effects()[rl])
+                d = deco[m[qubit]]
+                t = self.meas.pu[qubit], m[qubit]
+                m[qubit] = rl
+                self.meas.pu[qubit] = tpu
+                omega = self.omega(m)
+                self.meas.pu[qubit] = t[0]
+                m[qubit] = t[1]
+                sm += c * d * omega * omega.conjugate()
+        sm /= sum([_ for __, _ in ms])
+        return sm
+
+    def gradient_original(self, ms):
         gradient = []
         original = 0
-        for m, c in ms:
+        for m, c in ms:  # calculate original variance
             omega = self.omega(m)
             original += c * omega * omega.conjugate()
-        original /= s
+        original /= sum([c for m, c in ms])
         for i in range(self.N):
             current_gradient = []
-            pu = ParameterizedUnitary(self.meas.pu[i])
-            for k in range(8):
-                sm = 0
-                tpu = pu
-                tpu.parameters[k] += h
-                tpu.get_unitary(update=True)
-                for m, c in ms:
-                    # print("new:", tpu.get_effects())
-                    # print("old:", self.meas.pu[i].get_effects())
-                    for rl in range(4):
-                        deco = self.meas.pu[i].coefficient_on_effects(tpu.get_effects()[rl])
-                        # print("deco:", deco)
-                        d = deco[m[i]]
-                        # print("m[i]:", m[i])
+            for k in range(self.parameterization.num_parameter):
+                vp = self.variance_of_biased_parameter(i, k, h, ms)
+                vm = self.variance_of_biased_parameter(i, k, -h, ms)
+                current_gradient.append((vp - vm) / (2 * h))
+            gradient.append(current_gradient)
+        print("original:", original)
+        print("gradient:", gradient)
+        return gradient
 
-                        t = self.meas.pu[i], m[i]
-                        m[i] = rl
-                        self.meas.pu[i] = tpu
-                        omega = self.omega(m)
-                        self.meas.pu[i] = t[0]
-                        m[i] = t[1]
-                        sm += c * d * omega * omega.conjugate()
-                        # print("d:", d)
-                sm /= s
-                # print("sm:", sm)
-                current_gradient.append((sm - original) / h)
+    def gradient_canonical(self, ms):
+        gradient = []
+        original = 0
+        for m, c in ms:  # calculate original variance
+            omega = self.omega(m)
+            original += c * omega * omega.conjugate()
+        original /= sum([c for m, c in ms])
+        for i in range(self.N):
+            current_gradient = []
+            for k in range(self.parameterization.num_parameter):
+                vp = self.variance_of_biased_parameter(i, k, h, ms)
+                vm = self.variance_of_biased_parameter(i, k, -h, ms)
+                # vp = self.variance_of_biased_parameter(i, k, np.pi / 4, ms)
+                # vm = self.variance_of_biased_parameter(i, k, -np.pi / 4, ms)
+                current_gradient.append((vp - vm) / (2 * h))
             gradient.append(current_gradient)
         print("original:", original)
         print("gradient:", gradient)
@@ -249,15 +332,20 @@ class AdaptiveMeasurement(object):
         s = S
         nu = 0.05
         o, v = None, None
+        total_shots = 0
+        print(f"using {self.parameterization}")
         for i in range(t):
             print(f"{i + 1}th iteration started...")
             ms = self.meas.simulate_measure(s)
+            total_shots += s
             # print('im here')
-            ot = sum([self.omega(m) * c /s for m, c in ms])
-            vt = 0
+            ot = sum([Decimal(self.omega(m).real) * c for m, c in ms]) / s
+            for m,c in ms:
+                print((self.omega(m),c))
+            vt = Decimal(0)
             for m, c in ms:
-                vt += (self.omega(m) - ot) ** 2 * c
-            vt /= s
+                vt += (Decimal(self.omega(m).real) - ot) ** 2 * c
+            vt /= (s - 1) * s
             if (o, v) == (None, None):
                 o, v = ot, vt
             else:
@@ -269,6 +357,8 @@ class AdaptiveMeasurement(object):
             nu /= 1.1
             print("local result:", (ot, vt))
             print("global result:", (o, v))
+            print("standard deviation:", v.sqrt())
+            print(f"used {total_shots} shots till now.")
         return o, v
 
 

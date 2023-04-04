@@ -36,7 +36,7 @@ def convert_to_qae_problem(u: QuantumCircuit, h: list):
     )
 
 
-def calc_by_qae(u: QuantumCircuit, o, num_eval):
+def calc_by_qae(u: QuantumCircuit, o, num_eval, shots):
     h = np.diagonal(o).copy()
     k = max(0, -min(h))
     h = h + np.ones_like(h, dtype=float) * k
@@ -45,7 +45,7 @@ def calc_by_qae(u: QuantumCircuit, o, num_eval):
 
     problem = convert_to_qae_problem(u, list(h))
     backend = BasicAer.get_backend('qasm_simulator')
-    instance = QuantumInstance(backend, shots=100)
+    instance = QuantumInstance(backend, shots=shots)
 
     ae = AmplitudeEstimation(
         num_eval_qubits=num_eval,  # the number of evaluation qubits specifies circuit width and accuracy
