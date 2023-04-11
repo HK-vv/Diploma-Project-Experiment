@@ -1,8 +1,11 @@
+import pickle
+
 from qiskit import QuantumCircuit, BasicAer, transpile, Aer
 import matplotlib.pyplot as plt
 import numpy as np
 
-from adaptive_measurement import observable_of_ising_model, AdaptiveMeasurement, Observable, OriginalParameterization, \
+from adaptive_measurement import observable_of_ising_model, AdaptiveMeasurement, Observable, \
+    OriginalParameterization, \
     CanonicalParameterization
 from qae import calc_by_qae
 
@@ -24,7 +27,7 @@ def compare(u: QuantumCircuit, o: np.ndarray, shots):
     statevector_backend = BasicAer.get_backend('statevector_simulator')
     ideal_job = statevector_backend.run(transpile(u, backend=statevector_backend))
     ideal_state = ideal_job.result().get_statevector()
-    ideal_res = ideal_state.conjugate() @ o @ ideal_state
+    ideal_res = ideal_state.conjugate().T @ o @ ideal_state
     print(ideal_res)
 
     # two method result:
@@ -36,9 +39,12 @@ def compare(u: QuantumCircuit, o: np.ndarray, shots):
     # adaptive measure
     pstr = Observable(n, o).get_pauli_string_for_diagonal()
     print(pstr)
-    am = AdaptiveMeasurement(n, pstr, u, CanonicalParameterization)
-    print(am.run(20))
-
+    adp_res = []
+    for i in range(5):
+        am = AdaptiveMeasurement(n, pstr, u, CanonicalParameterization)
+        adp_res.append(am.run(20))
+    with open('fig/adp_can.pkl', 'wb') as f:
+        pickle.dump(adp_res, f)
     pass
 
 

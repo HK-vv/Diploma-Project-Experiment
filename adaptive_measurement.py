@@ -13,7 +13,7 @@ from qiskit.visualization import *
 
 h = 10 ** -3
 delta = 0.05
-S = 1000000
+S = 1000
 
 """
 notations:
@@ -78,8 +78,8 @@ class OriginalParameterization(ParameterizedUnitary):
 
     def __init__(self, obj=None):
         super(OriginalParameterization, self).__init__()
-        self.parameters = [0.6] * type(self).num_parameter  # all parameters should be in (0,1)
-        # self.parameters = list(np.random.rand(type(self).num_parameter))
+        # self.parameters = [0.6] * type(self).num_parameter  # all parameters should be in (0,1)
+        self.parameters = list(np.random.rand(type(self).num_parameter))
         if obj is not None:
             if isinstance(obj, type(self)):
                 self.parameters = obj.parameters
@@ -128,7 +128,7 @@ class CanonicalParameterization(ParameterizedUnitary):
 
     def __init__(self, obj=None):
         super(CanonicalParameterization, self).__init__()
-        # self.parameters = [0.6] * type(self).num_parameter  # all parameters should be in (0,1)
+        # self.parameters = [0.3] * type(self).num_parameter  # all parameters should be in (0,1)
         self.parameters = list(np.random.rand(type(self).num_parameter))
         if obj is not None:
             if isinstance(obj, type(self)):
@@ -181,7 +181,7 @@ class IcPOVM(object):
         for i in range(n):
             circ.append(self.pu[i].generate_gate(), [i, i + n])  # apply PU
         meas = QuantumCircuit(2 * n, 2 * n)
-        meas.measure(range(2 * n), range(2 * n))
+        # meas.measure(range(2 * n), range(2 * n))
         circ = circ.compose(meas, range(2 * n))
         # circ.draw('mpl')
         # plt.show()
@@ -196,18 +196,41 @@ class IcPOVM(object):
         ms = []
 
         # simulate circuit and store results in ms
-        be = Aer.get_backend('qasm_simulator')
-        compiled_circuit = transpile(self.construct_circuit(), be)
-        job_sim = be.run(compiled_circuit, shots=s)
-        counts = job_sim.result().get_counts()
-        plot_histogram(counts)
-        plt.show()
-        for x, y in counts.items():
-            m = []
-            for i in range(self.bits):
-                m.append(int(x[i] + x[i + self.bits], 2))
-            ms.append((m, y))
+        # earlier version (using QASM simulator)
+        # be = Aer.get_backend('aer_simulator_statevector')
+        # compiled_circuit = transpile(self.construct_circuit(), be)
+        # job_sim = be.run(compiled_circuit, shots=s)
+        # counts = job_sim.result().get_counts(compiled_circuit)
+        # plot_histogram(counts)
+        # plt.show()
+        # for x, y in counts.items():
+        #     m = []
+        #     for i in range(self.bits):
+        #         m.append(int(x[i + self.bits] + x[i], 2))
+        #     ms.append((m, y))
 
+        be = BasicAer.get_backend('statevector_simulator')
+        circuit = self.construct_circuit()
+        compiled_circuit = transpile(circuit, be)
+        job_sim = be.run(compiled_circuit)
+        state = job_sim.result().get_statevector()
+        probs = [(x * x.conjugate()).real for x in state]
+
+        d = []
+        for i in range(2 ** (2 * self.bits)):
+            b = bin(i)[2:]
+            while len(b) < self.bits * 2:
+                b = '0' + b
+            b = b[::-1]  # [::-1] for reverse
+            m = []
+            for j in range(self.bits):
+                m.append(int(b[j + self.bits] + b[j], 2))
+            d.append((m, probs[i]))
+
+        # make sampling
+        sample = np.random.choice(a=np.asarray(range(len(d))), size=s, replace=True, p=[c for m, c in d])
+        for m, c in d:
+            ms.append((m, sum([1 if d[x][0] == m else 0 for x in list(sample)])))
         return ms
 
 
@@ -226,12 +249,12 @@ class AdaptiveMeasurement(object):
         """
         sigma = PauliList(['I', 'X', 'Y', 'Z']).to_matrix()
         o = self.observable
-        r = 0
+        r = Decimal(0)
         for k, v in o.items():
             # k is a vec contains [0,3], and v denotes c_k
-            p = v
+            p = Decimal(v.real)
             for i in range(len(k)):
-                p *= self.meas.pu[i].coefficient_on_effects(sigma[k[i]])[m[i]]
+                p *= Decimal(self.meas.pu[i].coefficient_on_effects(sigma[k[i]])[m[i]].real)
             r += p
         return r
 
@@ -267,7 +290,7 @@ class AdaptiveMeasurement(object):
             raise Exception("wrong type of parameterization.")
 
     def variance_of_biased_parameter(self, qubit, param, bias, ms):
-        sm = 0
+        sm = Decimal(0)
         tpu = self.parameterization(self.meas.pu[qubit])
         tpu.parameters[param] += bias
         tpu.get_unitary(update=True)
@@ -281,9 +304,9 @@ class AdaptiveMeasurement(object):
                 omega = self.omega(m)
                 self.meas.pu[qubit] = t[0]
                 m[qubit] = t[1]
-                sm += c * d * omega * omega.conjugate()
+                sm += Decimal((c * d).real) * omega * omega.conjugate().real
         sm /= sum([_ for __, _ in ms])
-        return sm
+        return float(sm)
 
     def gradient_original(self, ms):
         gradient = []
@@ -329,6 +352,7 @@ class AdaptiveMeasurement(object):
         :param t:
         :return:
         """
+        output = []
         s = S
         nu = 0.05
         o, v = None, None
@@ -339,12 +363,12 @@ class AdaptiveMeasurement(object):
             ms = self.meas.simulate_measure(s)
             total_shots += s
             # print('im here')
-            ot = sum([Decimal(self.omega(m).real) * c for m, c in ms]) / s
-            for m,c in ms:
-                print((self.omega(m),c))
+            ot = sum([self.omega(m) * Decimal(c.real / s) for m, c in ms])
+            # for m,c in ms:
+            # print((self.omega(m),c))
             vt = Decimal(0)
             for m, c in ms:
-                vt += (Decimal(self.omega(m).real) - ot) ** 2 * c
+                vt += (self.omega(m) - ot) ** 2 * c
             vt /= (s - 1) * s
             if (o, v) == (None, None):
                 o, v = ot, vt
@@ -353,13 +377,15 @@ class AdaptiveMeasurement(object):
                 v = v * vt / (v + vt)
             # print('im here!')
             self.update_povm(ms, nu)
-            s += S
+            # s += S
             nu /= 1.1
+
+            output.append([ot, vt, o, v, total_shots])
             print("local result:", (ot, vt))
             print("global result:", (o, v))
             print("standard deviation:", v.sqrt())
             print(f"used {total_shots} shots till now.")
-        return o, v
+        return output
 
 
 class Observable(object):
@@ -395,26 +421,9 @@ def observable_of_ising_model(n):
     for i in range(2 ** n):
         bits = [(i >> j) & 1 for j in range(n)]
         d.append(sum([-2 * (bits[j] ^ bits[j + 1]) + 1 for j in range(n - 1)]))
-    observable = np.diag(np.asarray(d, dtype=float))
+    observable = np.diag(np.asarray(d, dtype=np.double))
     return observable
 
 
 if __name__ == '__main__':
-    # o = {(1, 2, 3): 2j, (0, 3, 2): 3, (0, 0, 0): 5 - 10j}
-    n = 4
-    o = Observable(n, observable_of_ising_model(n))
-    # o = Observable(n, np.identity(2**n) * 1000)
-    print(o.get_pauli_string_for_diagonal())
-    prep = QuantumCircuit(n)
-    prep.cnot(0, 1)
-    prep.rx(0.4, 1)
-    prep.cnot(1, 2)
-    prep.ry(0.3, 2)
-    prep.cnot(2, 3)
-    prep.rz(0.26, 3)
-
-    prep.draw('mpl')
-    plt.show()
-
-    am = AdaptiveMeasurement(n, o.get_pauli_string_for_diagonal(), prep)
-    print(am.run(30))
+    pass

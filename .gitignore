@@ -1,8 +1,11 @@
 # my ignore
 *.jpg
+*.png
 .idea/
 main.py
 *for_test*
+*.pkl
+plot_data.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
