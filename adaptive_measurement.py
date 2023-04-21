@@ -389,23 +389,23 @@ class Observable(object):
         self.matrix = np.array(M)
 
     def get_pauli_string_for_diagonal(self):
+        pauli_map = {0: 'I', 1: 'X', 2: 'Y', 3: 'Z'}
         A = []
-        for i in range(2 ** self.d):
+        for i in range(4 ** self.d):
             pstr = ''
             for j in range(self.d):
-                b = ((i >> j) & 1)
-                pstr += ('I' if b == 0 else 'Z')
-            pdiag = PauliList([pstr]).to_matrix()[0].diagonal()
-            A.append(pdiag)
-        A = np.array(A).T
+                b = ((i >> (2 * j)) & 3)
+                pstr += (pauli_map[b])
+            A.append(PauliList([pstr]).to_matrix()[0])
+        A = np.array(A)
         # print((A, self.matrix.diagonal()))
-        res = np.linalg.solve(A, self.matrix.diagonal())
+        res = np.linalg.solve(A, self.matrix)
         ans = {}
-        for i in range(2 ** self.d):
+        for i in range(4 ** self.d):
             plist = []
             for j in range(self.d):
-                b = ((i >> (self.d - j - 1)) & 1)
-                plist.append(0 if b == 0 else 3)
+                b = ((i >> (2 * (self.d - j - 1))) & 3)
+                plist.append(b)
             if abs(res[i]) > 10 ** -9:
                 ans[tuple(plist)] = res[i]
         return ans
@@ -421,6 +421,28 @@ def observable_of_ising_model(n):
     # observable = np.diag([2, 1, 0.6, 0.1, 0.8, 9, 3.4, 1.7])
     # print(observable)
     return observable
+
+def generate_random_pauli_string(n):
+    ret = {}
+    for i in range(4 ** n):
+        plist = []
+        for j in range(n):
+            b = ((i >> (2 * j)) & 3)
+            plist.append(b)
+        ret[tuple(plist)] = np.random.random()
+    return ret
+
+def generate_random_observable(n):
+    pauli_map = {0: 'I', 1: 'X', 2: 'Y', 3: 'Z'}
+    observable = np.zeros(shape=(2 ** n, 2 ** n), dtype=complex)
+    pauli_string=generate_random_pauli_string(n)
+    for pl, c in pauli_string.items():
+        pstr = ''
+        for i in range(n):
+            pstr += pauli_map[pl[n-i-1]]
+        observable += c * PauliList([pstr]).to_matrix()[0]
+
+    return pauli_string, observable
 
 
 if __name__ == '__main__':
