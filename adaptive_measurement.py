@@ -13,7 +13,7 @@ from qiskit.visualization import *
 
 h = 10 ** -3
 delta = 0.05
-S = 1000
+S = 10000
 
 """
 notations:
@@ -82,7 +82,7 @@ class OriginalParameterization(ParameterizedUnitary):
         self.parameters = list(np.random.rand(type(self).num_parameter))
         if obj is not None:
             if isinstance(obj, type(self)):
-                self.parameters = obj.parameters
+                self.parameters = obj.parameters.copy()
             else:
                 raise Exception("Inconsistent type of parameterization!")
 
@@ -132,7 +132,7 @@ class CanonicalParameterization(ParameterizedUnitary):
         self.parameters = list(np.random.rand(type(self).num_parameter))
         if obj is not None:
             if isinstance(obj, type(self)):
-                self.parameters = obj.parameters
+                self.parameters = obj.parameters.copy()
             else:
                 raise Exception("Inconsistent type of parameterization!")
 
@@ -140,7 +140,7 @@ class CanonicalParameterization(ParameterizedUnitary):
         if self.unitary is not None and update is False:
             return self.unitary
         vcirc = QuantumCircuit(2)
-        c = 2 * np.pi
+        c = 4 * np.pi
         for i in range(2):
             bias = 0
             vcirc.rx(c * self.parameters[bias + i * 3 + 0], i)
@@ -155,6 +155,8 @@ class CanonicalParameterization(ParameterizedUnitary):
             vcirc.ry(c * self.parameters[bias + i * 3 + 1], i)
             vcirc.rx(c * self.parameters[bias + i * 3 + 2], i)
         self.unitary = Operator(vcirc).data
+        # vcirc.draw('mpl')
+        # plt.show()
         return self.unitary
 
     def update_diff(self, diffs):
@@ -180,10 +182,13 @@ class IcPOVM(object):
         circ.compose(self.init, qubits=range(n), front=True, inplace=True)
         for i in range(n):
             circ.append(self.pu[i].generate_gate(), [i, i + n])  # apply PU
+        # circ.draw('mpl')
+        # plt.show()
+
         meas = QuantumCircuit(2 * n, 2 * n)
         # meas.measure(range(2 * n), range(2 * n))
         circ = circ.compose(meas, range(2 * n))
-        # circ.draw('mpl')
+        # meas.draw('mpl')
         # plt.show()
         return circ
 
@@ -210,8 +215,8 @@ class IcPOVM(object):
         #     ms.append((m, y))
 
         be = BasicAer.get_backend('statevector_simulator')
-        circuit = self.construct_circuit()
-        compiled_circuit = transpile(circuit, be)
+        circ = self.construct_circuit()
+        compiled_circuit = transpile(circ, be)
         job_sim = be.run(compiled_circuit)
         state = job_sim.result().get_statevector()
         probs = [(x * x.conjugate()).real for x in state]
@@ -225,13 +230,13 @@ class IcPOVM(object):
             m = []
             for j in range(self.bits):
                 m.append(int(b[j + self.bits] + b[j], 2))
-            d.append((m, probs[i]))
+            d.append((m, probs[i] * s))
 
         # make sampling
-        sample = np.random.choice(a=np.asarray(range(len(d))), size=s, replace=True, p=[c for m, c in d])
-        for m, c in d:
-            ms.append((m, sum([1 if d[x][0] == m else 0 for x in list(sample)])))
-        return ms
+        # sample = np.random.choice(a=np.asarray(range(len(d))), size=s, replace=True, p=[c for m, c in d])
+        # for m, c in d:
+        #     ms.append((m, sum([1 if d[x][0] == m else 0 for x in list(sample)])))
+        return d
 
 
 class AdaptiveMeasurement(object):
@@ -276,7 +281,7 @@ class AdaptiveMeasurement(object):
             diff.append(td)
         self.meas.update_parameters(diff)
 
-    def variance_gradient(self, ms):  # ms=[[m_1], [m_2]], m_i denotes result of ith shot
+    def variance_gradient(self, ms):  # ms=[([m_1], c_1), ([m_2], c_2)], m_i denotes result of ith shot
         """
         O(2048n^2sk)
         :param ms:
@@ -293,6 +298,7 @@ class AdaptiveMeasurement(object):
         sm = Decimal(0)
         tpu = self.parameterization(self.meas.pu[qubit])
         tpu.parameters[param] += bias
+        tpu.parameters[param] -= np.floor(tpu.parameters[param])
         tpu.get_unitary(update=True)
         for m, c in ms:
             for rl in range(4):
@@ -304,17 +310,12 @@ class AdaptiveMeasurement(object):
                 omega = self.omega(m)
                 self.meas.pu[qubit] = t[0]
                 m[qubit] = t[1]
-                sm += Decimal((c * d).real) * omega * omega.conjugate().real
-        sm /= sum([_ for __, _ in ms])
+                sm += Decimal((c * d).real) * omega ** 2
+        sm /= Decimal(sum([_ for __, _ in ms]))
         return float(sm)
 
     def gradient_original(self, ms):
         gradient = []
-        original = 0
-        for m, c in ms:  # calculate original variance
-            omega = self.omega(m)
-            original += c * omega * omega.conjugate()
-        original /= sum([c for m, c in ms])
         for i in range(self.N):
             current_gradient = []
             for k in range(self.parameterization.num_parameter):
@@ -322,27 +323,21 @@ class AdaptiveMeasurement(object):
                 vm = self.variance_of_biased_parameter(i, k, -h, ms)
                 current_gradient.append((vp - vm) / (2 * h))
             gradient.append(current_gradient)
-        print("original:", original)
         print("gradient:", gradient)
         return gradient
 
     def gradient_canonical(self, ms):
         gradient = []
-        original = 0
-        for m, c in ms:  # calculate original variance
-            omega = self.omega(m)
-            original += c * omega * omega.conjugate()
-        original /= sum([c for m, c in ms])
         for i in range(self.N):
             current_gradient = []
             for k in range(self.parameterization.num_parameter):
                 vp = self.variance_of_biased_parameter(i, k, h, ms)
                 vm = self.variance_of_biased_parameter(i, k, -h, ms)
-                # vp = self.variance_of_biased_parameter(i, k, np.pi / 4, ms)
-                # vm = self.variance_of_biased_parameter(i, k, -np.pi / 4, ms)
                 current_gradient.append((vp - vm) / (2 * h))
+                # vp = self.variance_of_biased_parameter(i, k, 1 / 8, ms)
+                # vm = self.variance_of_biased_parameter(i, k, -1 / 8, ms)
+                # current_gradient.append(2 * np.pi * (vp - vm))
             gradient.append(current_gradient)
-        print("original:", original)
         print("gradient:", gradient)
         return gradient
 
@@ -368,7 +363,7 @@ class AdaptiveMeasurement(object):
             # print((self.omega(m),c))
             vt = Decimal(0)
             for m, c in ms:
-                vt += (self.omega(m) - ot) ** 2 * c
+                vt += (self.omega(m) - ot) ** 2 * Decimal(c)
             vt /= (s - 1) * s
             if (o, v) == (None, None):
                 o, v = ot, vt
@@ -378,7 +373,7 @@ class AdaptiveMeasurement(object):
             # print('im here!')
             self.update_povm(ms, nu)
             # s += S
-            nu /= 1.1
+            nu /= 1.05
 
             output.append([ot, vt, o, v, total_shots])
             print("local result:", (ot, vt))
@@ -402,14 +397,14 @@ class Observable(object):
                 pstr += ('I' if b == 0 else 'Z')
             pdiag = PauliList([pstr]).to_matrix()[0].diagonal()
             A.append(pdiag)
-        A = np.array(A).transpose()
+        A = np.array(A).T
         # print((A, self.matrix.diagonal()))
         res = np.linalg.solve(A, self.matrix.diagonal())
         ans = {}
         for i in range(2 ** self.d):
             plist = []
             for j in range(self.d):
-                b = ((i >> j) & 1)
+                b = ((i >> (self.d - j - 1)) & 1)
                 plist.append(0 if b == 0 else 3)
             if abs(res[i]) > 10 ** -9:
                 ans[tuple(plist)] = res[i]
@@ -422,6 +417,9 @@ def observable_of_ising_model(n):
         bits = [(i >> j) & 1 for j in range(n)]
         d.append(sum([-2 * (bits[j] ^ bits[j + 1]) + 1 for j in range(n - 1)]))
     observable = np.diag(np.asarray(d, dtype=np.double))
+    observable = np.diag(np.random.random(size=2 ** n))
+    # observable = np.diag([2, 1, 0.6, 0.1, 0.8, 9, 3.4, 1.7])
+    # print(observable)
     return observable
 
 
