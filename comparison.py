@@ -6,6 +6,7 @@ import numpy as np
 
 from adaptive_measurement import observable_of_ising_model, AdaptiveMeasurement, Observable, \
     OriginalParameterization, CanonicalParameterization, generate_random_observable
+from pauli_measurement import PauliMeasurement
 from qae import calc_by_qae
 
 
@@ -36,14 +37,18 @@ def compare(u: QuantumCircuit, pstr, o: np.ndarray, n, shots):
         [(o[classical_sample[i]][classical_sample[i]] - classical_average) ** 2 for i in range(s)]) / s
 
     print("ideal_res:", ideal_res)
-    print("classical single shot variance:", ideal_variance)
-    print("classical simulate variance:", classical_variance)
+    # print("classical single shot variance:", ideal_variance)
+    # print("classical simulate variance:", classical_variance)
 
     # two method result:
 
     # QAE
     # ans = calc_by_qae(u, o, 2, 10000)
     # print("qae result:", ans)
+
+    # pauli measure
+    pauli_measure = PauliMeasurement(pstr, u)
+    print("pauli method:", pauli_measure.measure())
 
     # adaptive measure
     # pstr = Observable(n, o).get_pauli_string_for_diagonal()
@@ -60,9 +65,6 @@ def compare(u: QuantumCircuit, pstr, o: np.ndarray, n, shots):
 if __name__ == '__main__':
     n = 3
     u = Preparation(n)
-    # o = observable_of_ising_model(n) * 100
     pstr, o = generate_random_observable(n)
-    print(o)
 
-    print(Aer.backends())
     compare(u, pstr, o, n, 100)

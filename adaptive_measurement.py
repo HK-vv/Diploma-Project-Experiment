@@ -370,7 +370,7 @@ class AdaptiveMeasurement(object):
             else:
                 o = (ot * v + o * vt) / (v + vt)
                 v = v * vt / (v + vt)
-            # print('im here!')
+            print("now calculating gradient.")
             self.update_povm(ms, nu)
             # s += S
             nu /= 1.05
