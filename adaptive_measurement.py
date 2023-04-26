@@ -63,7 +63,7 @@ class ParameterizedUnitary(object):
                     eff[i][j] = u[k][i].conjugate() * u[k][j]
             effects.append(eff)
         # the effects should have sum one and independent
-        # GramSchmidt([Matrix(x) for x in effects])  # assert effects is independent
+        GramSchmidt([Matrix(x) for x in effects])  # assert independence
         return effects
 
     def get_unitary(self, update=False):
@@ -79,7 +79,8 @@ class OriginalParameterization(ParameterizedUnitary):
     def __init__(self, obj=None):
         super(OriginalParameterization, self).__init__()
         # self.parameters = [0.6] * type(self).num_parameter  # all parameters should be in (0,1)
-        self.parameters = list(np.random.rand(type(self).num_parameter))
+        self.parameters = [0.25, 0.30408672, 0.125, 0.5, 0.5, 0.25, 0.5, 0.75]  # SIC
+        # self.parameters = list(np.random.rand(type(self).num_parameter))
         if obj is not None:
             if isinstance(obj, type(self)):
                 self.parameters = obj.parameters.copy()
@@ -90,29 +91,17 @@ class OriginalParameterization(ParameterizedUnitary):
         if self.unitary is not None and update is False:
             return self.unitary
         x = self.parameters
-        t1 = [1.0]
-        for i in range(2):
-            t1.append(x[i] * np.pi)
-        t1.append(x[2] * np.pi * 2)
-        u0 = np.array(n_sphere.convert_rectangular(t1, digits=10))
-        # choice of orthobasis still remains doubt
-        tu = [Matrix(u0), Matrix([1, 0, 0, 0]), Matrix([0, 1, 0, 0]), Matrix([0, 0, 1, 1])]
-        orth = GramSchmidt(tu, orthonormal=True)
-        t2 = [1.0]
-        for i in range(3, 7):
-            t2.append(x[i] * np.pi)
-        t2.append(x[7] * np.pi * 2)
-        r = n_sphere.convert_rectangular(t2, digits=10)
-        u1 = np.zeros([4, 1])
-        for k in range(3):
-            u1 += (r[2 * k] + r[2 * k + 1] * 1j) * orth[k + 1]
-        u1 = np.array(u1)
-        tu = [Matrix(u0), Matrix(u1), Matrix([1, 0, 3, 0]), Matrix([0, 2, 0, 4])]
-        tu = GramSchmidt(tu, orthonormal=True)
-        u = np.empty([4, 4], dtype=complex)
-        for k in range(4):
-            u[k] = (np.array(tu[k].T))
-        self.unitary = u
+        # first column
+        u0 = cartesian_from_hyperspherical(x[:3])
+        # choice of orthonormal basis still remains doubt
+        rb = remaining_orthonormal_basis(np.array([u0]))
+        r = cartesian_from_hyperspherical(x[3:])
+        # second column
+        u1 = sum([(r[2 * k] + 1j * r[2 * k + 1]) * rb[k] for k in range(3)])
+        # last two column
+        u2, u3 = remaining_orthonormal_basis(np.array([u0, u1]))
+        u = np.array([u0, u1, u2, u3])
+        self.unitary = u.T
         return self.unitary
 
     def update_diff(self, diffs):
@@ -422,27 +411,40 @@ def observable_of_ising_model(n):
     # print(observable)
     return observable
 
-def generate_random_pauli_string(n):
-    ret = {}
-    for i in range(4 ** n):
-        plist = []
-        for j in range(n):
-            b = ((i >> (2 * j)) & 3)
-            plist.append(b)
-        ret[tuple(plist)] = np.random.random()
-    return ret
 
-def generate_random_observable(n):
-    pauli_map = {0: 'I', 1: 'X', 2: 'Y', 3: 'Z'}
-    observable = np.zeros(shape=(2 ** n, 2 ** n), dtype=complex)
-    pauli_string=generate_random_pauli_string(n)
-    for pl, c in pauli_string.items():
-        pstr = ''
-        for i in range(n):
-            pstr += pauli_map[pl[n-i-1]]
-        observable += c * PauliList([pstr]).to_matrix()[0]
+def cartesian_from_hyperspherical(arr: list):
+    """
+    calculate cartesian coordinates from hyperspherical coordinates.
+    :param arr: N-dimensional array in [0,1]
+    :return: (N+1)-dimensional normalized array
+    """
+    res = np.zeros(len(arr) + 1)
+    tarr = [_ * np.pi for _ in arr]
+    tarr[-1] *= 2
+    pr = 1
+    for i, e in enumerate(tarr):
+        res[i] = pr * np.cos(e)
+        pr *= np.sin(e)
+    res[-1] = pr
+    return res
 
-    return pauli_string, observable
+
+def remaining_orthonormal_basis(own_vec: np.ndarray):
+    """
+    calculate the remaining orthonormal basis
+    :param own_vec: a (k,d) numpy array
+    :return: a (d-k, d) numpy array
+    """
+    d = own_vec.shape[1]
+    P = np.eye(d) - sum([np.outer(v, v.conj()) for v in own_vec])
+    res = []
+    for com_vec in np.eye(d):
+        proj = P @ com_vec
+        if not np.isclose(proj, 0.0).all():
+            proj /= np.linalg.norm(proj)
+            res.append(proj)
+            P -= np.outer(proj, proj.conj())
+    return np.array(res)
 
 
 if __name__ == '__main__':

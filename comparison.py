@@ -1,3 +1,5 @@
+from qiskit.quantum_info import PauliList
+
 import pickle
 
 from qiskit import QuantumCircuit, BasicAer, transpile, Aer
@@ -5,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from adaptive_measurement import observable_of_ising_model, AdaptiveMeasurement, Observable, \
-    OriginalParameterization, CanonicalParameterization, generate_random_observable
+    OriginalParameterization, CanonicalParameterization
 from pauli_measurement import PauliMeasurement
 from qae import calc_by_qae
 
@@ -20,6 +22,30 @@ class Preparation(QuantumCircuit):
             self.h(i)
         self.draw('mpl')
         plt.show()
+
+
+def generate_random_pauli_string(n):
+    ret = {}
+    for i in range(4 ** n):
+        plist = []
+        for j in range(n):
+            b = ((i >> (2 * j)) & 3)
+            plist.append(b)
+        ret[tuple(plist)] = np.random.random()
+    return ret
+
+
+def generate_random_observable(n):
+    pauli_map = {0: 'I', 1: 'X', 2: 'Y', 3: 'Z'}
+    observable = np.zeros(shape=(2 ** n, 2 ** n), dtype=complex)
+    pauli_string = generate_random_pauli_string(n)
+    for pl, c in pauli_string.items():
+        pstr = ''
+        for i in range(n):
+            pstr += pauli_map[pl[n - i - 1]]
+        observable += c * PauliList([pstr]).to_matrix()[0]
+
+    return pauli_string, observable
 
 
 def compare(u: QuantumCircuit, pstr, o: np.ndarray, n, shots):
@@ -63,7 +89,7 @@ def compare(u: QuantumCircuit, pstr, o: np.ndarray, n, shots):
 
 
 if __name__ == '__main__':
-    n = 3
+    n = 2
     u = Preparation(n)
     pstr, o = generate_random_observable(n)
 
