@@ -92,30 +92,6 @@ class OriginalParameterization(ParameterizedUnitary):
         if self.unitary is not None and update is False:
             return self.unitary
         x = self.parameters
-        # t1 = [1.0]
-        # for i in range(2):
-        #     t1.append(x[i] * np.pi)
-        # t1.append(x[2] * np.pi * 2)
-        # u0 = np.array(n_sphere.convert_rectangular(t1, digits=10))
-        # # choice of orthobasis still remains doubt
-        # tu = [Matrix(u0), Matrix([1, 0, 0, 0]), Matrix([0, 1, 0, 0]), Matrix([0, 0, 1, 1])]
-        # orth = GramSchmidt(tu, orthonormal=True)
-        # t2 = [1.0]
-        # for i in range(3, 7):
-        #     t2.append(x[i] * np.pi)
-        # t2.append(x[7] * np.pi * 2)
-        # r = n_sphere.convert_rectangular(t2, digits=10)
-        # u1 = np.zeros([4, 1])
-        # for k in range(3):
-        #     u1 += (r[2 * k] + r[2 * k + 1] * 1j) * orth[k + 1]
-        # u1 = np.array(u1)
-        # tu = [Matrix(u0), Matrix(u1), Matrix([1, 0, 3, 0]), Matrix([0, 2, 0, 4])]
-        # tu = GramSchmidt(tu, orthonormal=True)
-        # u = np.empty([4, 4], dtype=complex)
-        # for k in range(4):
-        #     u[k] = (np.array(tu[k].T))
-        # self.unitary = u
-
         # first column
         u0 = cartesian_from_hyperspherical(x[:3])
         # choice of orthonormal basis still remains doubt

@@ -43,14 +43,14 @@ def nonorth_basis(n):
     basis = []
     for i in range(2 ** n):
         t = np.zeros(2 ** n)
-        for j in range(i):
+        for j in range(i+1):
             t[j] = 1
         basis.append(t / np.linalg.norm(t))
     return basis
 
 
 def encode_state(n, x: list, basis):
-    s = np.zeros((2 ** n))
+    s = np.zeros(2 ** n)
     for i in range(2 ** n):
         s += x[i] * basis[i]
     s /= np.linalg.norm(s)
@@ -107,7 +107,7 @@ def compare(initial: np.ndarray, pstr, o: np.ndarray, n, path):
 if __name__ == '__main__':
     n = 3
     initial_state = encode_state(n, state_code_c, orth_basis(n))
-    o = encode_observable(n, observable_code_alpha, orth_basis(n))
+    o = encode_observable(n, observable_code_beta, orth_basis(n))
     pstr = decompose_observable_in_pauli_string(n, o)
 
-    compare(initial_state, pstr, o, n, "pickle/otrh_c_alpha.pkl")
+    compare(initial_state, pstr, o, n, "pickle/orth_c_beta.pkl")
