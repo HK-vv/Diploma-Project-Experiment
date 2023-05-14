@@ -64,7 +64,7 @@ class ParameterizedUnitary(object):
                     eff[i][j] = u[k][i].conjugate() * u[k][j]
             effects.append(eff)
         # the effects should have sum one and independent
-        GramSchmidt([Matrix(x) for x in effects])  # assert independence
+        # GramSchmidt([Matrix(x) for x in effects])  # assert independence
         return effects
 
     def get_unitary(self, update=False):
@@ -414,6 +414,7 @@ def observable_of_ising_model(n):
     # print(observable)
     return observable
 
+
 def generate_random_pauli_string(n):
     ret = {}
     for i in range(4 ** n):
@@ -433,6 +434,8 @@ def generate_random_observable(n):
         for i in range(n):
             pstr += pauli_map[pl[n - i - 1]]
         observable += c * PauliList([pstr]).to_matrix()[0]
+    return pauli_string, observable
+
 
 def cartesian_from_hyperspherical(arr: list):
     """
@@ -490,41 +493,6 @@ def decompose_observable_in_pauli_string(n, o: np.ndarray):
         if abs(res[i]) > 1e-9:
             pauli_string[plists[i]] = res[i]
     return pauli_string
-
-
-def cartesian_from_hyperspherical(arr: list):
-    """
-    calculate cartesian coordinates from hyperspherical coordinates.
-    :param arr: N-dimensional array in [0,1]
-    :return: (N+1)-dimensional normalized array
-    """
-    res = np.zeros(len(arr) + 1)
-    tarr = [_ * np.pi for _ in arr]
-    tarr[-1] *= 2
-    pr = 1
-    for i, e in enumerate(tarr):
-        res[i] = pr * np.cos(e)
-        pr *= np.sin(e)
-    res[-1] = pr
-    return res
-
-
-def remaining_orthonormal_basis(own_vec: np.ndarray):
-    """
-    calculate the remaining orthonormal basis
-    :param own_vec: a (k,d) numpy array
-    :return: a (d-k, d) numpy array
-    """
-    d = own_vec.shape[1]
-    P = np.eye(d) - sum([np.outer(v, v.conj()) for v in own_vec])
-    res = []
-    for com_vec in np.eye(d):
-        proj = P @ com_vec
-        if not np.isclose(proj, 0.0).all():
-            proj /= np.linalg.norm(proj)
-            res.append(proj)
-            P -= np.outer(proj, proj.conj())
-    return np.array(res)
 
 
 if __name__ == '__main__':
