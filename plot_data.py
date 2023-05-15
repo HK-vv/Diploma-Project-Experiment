@@ -50,6 +50,7 @@ def plot_overall_performance(dataname, pauli_var, opt_pauli_var):
     y_opt_pauli = [opt_pauli_var / _ for _ in x]
 
     plt.figure()
+    plt.yscale('log')
     plt.plot(x, y_adp, color='r', label='adaptive')
     plt.plot(x, y_pauli, color='g', label='pauli')
     plt.plot(x, y_opt_pauli, color='b', label='adv pauli')
@@ -108,12 +109,13 @@ def obsolete():
 
 if __name__ == '__main__':
     n = 3
-    initial_state = encode_state(n, state_code_b, nonorth_basis(n))
-    o = encode_observable(n, observable_code_alpha, nonorth_basis(n))
+    initial_state = encode_state(n, state_code_a, nonorth_basis(n))  #
+    o = encode_observable(n, observable_code_alpha, nonorth_basis(n))  #
+
     pstr = decompose_observable_in_pauli_string(n, o)
     pauli_measure = PauliMeasurement(n, pstr, initial_state)
     pauli_var = pauli_measure.measure()[1]
     opt_pauli_var = pauli_measure.opt_measure()[1]
 
-    plot_var_per_measure("nonorth_b_alpha", pauli_var, opt_pauli_var)
-    plot_overall_performance("nonorth_b_alpha", pauli_var, opt_pauli_var)
+    plot_var_per_measure("nonorth_a_alpha", pauli_var, opt_pauli_var)  #
+    plot_overall_performance("nonorth_a_alpha", pauli_var, opt_pauli_var)  #
